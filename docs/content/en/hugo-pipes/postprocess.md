@@ -5,10 +5,13 @@ categories: [asset management]
 keywords: []
 menu:
   docs:
-    parent: pipes
-    weight: 39
-weight: 39
-signature: ["resources.PostProcess RESOURCE"]
+    parent: hugo-pipes
+    weight: 50
+weight: 50
+action:
+  aliases: []
+  returnType: postpub.PostPublishedResource
+  signatures: [resources.PostProcess RESOURCE]
 ---
 
 ## Usage
@@ -24,7 +27,7 @@ There are currently two limitations to this:
 
     ```go-html-template
     {{ $css := resources.Get "css/main.css" }}
-    {{ $css = $css | resources.PostCSS | minify | fingerprint | resources.PostProcess }}
+    {{ $css = $css | css.PostCSS | minify | fingerprint | resources.PostProcess }}
     {{ $css.RelPermalink | upper }}
     ```
 
@@ -36,10 +39,14 @@ There are several ways to set up CSS purging with PostCSS in Hugo. If you have a
 
 The below configuration will write a `hugo_stats.json` file to the project root as part of the build. If you're only using this for the production build, you should consider placing it below [config/production](/getting-started/configuration/#configuration-directory).
 
-{{< code-toggle file="hugo" >}}
-[build]
-  writeStats = true
+{{< code-toggle file=hugo >}}
+[build.buildStats]
+  enable = true
 {{< /code-toggle >}}
+
+See the [configure build] documentation for details and options.
+
+[configure build]: /getting-started/configuration/#configure-build
 
 `postcss.config.js`
 
@@ -63,27 +70,27 @@ Note that in the example above, the "CSS purge step" will only be applied to the
 
 ```go-html-template
 {{ $css := resources.Get "css/main.css" }}
-{{ $css = $css | resources.PostCSS }}
+{{ $css = $css | css.PostCSS }}
 {{ if hugo.IsProduction }}
 {{ $css = $css | minify | fingerprint | resources.PostProcess }}
 {{ end }}
 <link href="{{ $css.RelPermalink }}" rel="stylesheet" />
 ```
 
-
-## Hugo Environment variables available in PostCSS
+## Hugo environment variables available in PostCSS
 
 These are the environment variables Hugo passes down to PostCSS (and Babel), which allows you do do `process.env.HUGO_ENVIRONMENT === 'production' ? [autoprefixer] : []` and similar:
 
 PWD
 : The absolute path to the project working directory.
-HUGO_ENVIRONMENT (and the alias HUGO_ENV)
+
+HUGO_ENVIRONMENT
 : The value e.g. set with `hugo -e production` (defaults to `production` for `hugo` and `development` for `hugo server`).
 
 HUGO_PUBLISHDIR
-: {{< new-in "0.109.0" >}} The absolute path to the publish directory (the `public` directory). Note that the value will always point to a directory on disk even when running `hugo server` in memory mode. If you write to this folder from PostCSS when running the server, you could run the server with one of these flags:
+: The absolute path to the publish directory (the `public` directory). Note that the value will always point to a directory on disk even when running `hugo server` in memory mode. If you write to this folder from PostCSS when running the server, you could run the server with one of these flags:
 
-```
+```sh
 hugo server --renderToDisk
 hugo server --renderStaticToDisk
 ```

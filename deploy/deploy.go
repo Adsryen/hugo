@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !nodeploy
-// +build !nodeploy
+//go:build withdeploy
+// +build withdeploy
 
 package deploy
 
@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -33,14 +34,13 @@ import (
 	"strings"
 	"sync"
 
-	"errors"
-
 	"github.com/dustin/go-humanize"
 	"github.com/gobwas/glob"
+	"github.com/gohugoio/hugo/common/loggers"
 	"github.com/gohugoio/hugo/config"
+	"github.com/gohugoio/hugo/deploy/deployconfig"
 	"github.com/gohugoio/hugo/media"
 	"github.com/spf13/afero"
-	jww "github.com/spf13/jwalterweatherman"
 	"golang.org/x/text/unicode/norm"
 
 	"gocloud.dev/blob"
@@ -56,11 +56,12 @@ type Deployer struct {
 	bucket  *blob.Bucket
 
 	mediaTypes media.Types // Hugo's MediaType to guess ContentType
-	quiet      bool        // true reduces STDOUT
+	quiet      bool        // true reduces STDOUT // TODO(bep) remove, this is a global feature.
 
-	cfg DeployConfig
+	cfg    deployconfig.DeployConfig
+	logger loggers.Logger
 
-	target *Target // the target to deploy to
+	target *deployconfig.Target // the target to deploy to
 
 	// For tests...
 	summary deploySummary // summary of latest Deploy results
@@ -73,9 +74,8 @@ type deploySummary struct {
 const metaMD5Hash = "md5chksum" // the meta key to store md5hash in
 
 // New constructs a new *Deployer.
-func New(cfg config.AllProvider, localFs afero.Fs) (*Deployer, error) {
-
-	dcfg := cfg.GetConfigSection(deploymentConfigKey).(DeployConfig)
+func New(cfg config.AllProvider, logger loggers.Logger, localFs afero.Fs) (*Deployer, error) {
+	dcfg := cfg.GetConfigSection(deployconfig.DeploymentConfigKey).(deployconfig.DeployConfig)
 	targetName := dcfg.Target
 
 	if len(dcfg.Targets) == 0 {
@@ -84,7 +84,7 @@ func New(cfg config.AllProvider, localFs afero.Fs) (*Deployer, error) {
 	mediaTypes := cfg.GetConfigSection("mediaTypes").(media.Types)
 
 	// Find the target to deploy to.
-	var tgt *Target
+	var tgt *deployconfig.Target
 	if targetName == "" {
 		// Default to the first target.
 		tgt = dcfg.Targets[0]
@@ -112,12 +112,16 @@ func (d *Deployer) openBucket(ctx context.Context) (*blob.Bucket, error) {
 	if d.bucket != nil {
 		return d.bucket, nil
 	}
-	jww.FEEDBACK.Printf("Deploying to target %q (%s)\n", d.target.Name, d.target.URL)
+	d.logger.Printf("Deploying to target %q (%s)\n", d.target.Name, d.target.URL)
 	return blob.OpenBucket(ctx, d.target.URL)
 }
 
 // Deploy deploys the site to a target.
 func (d *Deployer) Deploy(ctx context.Context) error {
+	if d.logger == nil {
+		d.logger = loggers.NewDefault()
+	}
+
 	bucket, err := d.openBucket(ctx)
 	if err != nil {
 		return err
@@ -129,36 +133,40 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 
 	// Load local files from the source directory.
 	var include, exclude glob.Glob
+	var mappath func(string) string
 	if d.target != nil {
-		include, exclude = d.target.includeGlob, d.target.excludeGlob
+		include, exclude = d.target.IncludeGlob, d.target.ExcludeGlob
+		if d.target.StripIndexHTML {
+			mappath = stripIndexHTML
+		}
 	}
-	local, err := walkLocal(d.localFs, d.cfg.Matchers, include, exclude, d.mediaTypes)
+	local, err := d.walkLocal(d.localFs, d.cfg.Matchers, include, exclude, d.mediaTypes, mappath)
 	if err != nil {
 		return err
 	}
-	jww.INFO.Printf("Found %d local files.\n", len(local))
+	d.logger.Infof("Found %d local files.\n", len(local))
 	d.summary.NumLocal = len(local)
 
 	// Load remote files from the target.
-	remote, err := walkRemote(ctx, bucket, include, exclude)
+	remote, err := d.walkRemote(ctx, bucket, include, exclude)
 	if err != nil {
 		return err
 	}
-	jww.INFO.Printf("Found %d remote files.\n", len(remote))
+	d.logger.Infof("Found %d remote files.\n", len(remote))
 	d.summary.NumRemote = len(remote)
 
 	// Diff local vs remote to see what changes need to be applied.
-	uploads, deletes := findDiffs(local, remote, d.cfg.Force)
+	uploads, deletes := d.findDiffs(local, remote, d.cfg.Force)
 	d.summary.NumUploads = len(uploads)
 	d.summary.NumDeletes = len(deletes)
 	if len(uploads)+len(deletes) == 0 {
 		if !d.quiet {
-			jww.FEEDBACK.Println("No changes required.")
+			d.logger.Println("No changes required.")
 		}
 		return nil
 	}
 	if !d.quiet {
-		jww.FEEDBACK.Println(summarizeChanges(uploads, deletes))
+		d.logger.Println(summarizeChanges(uploads, deletes))
 	}
 
 	// Ask for confirmation before proceeding.
@@ -175,7 +183,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 
 	// Order the uploads. They are organized in groups; all uploads in a group
 	// must be complete before moving on to the next group.
-	uploadGroups := applyOrdering(d.cfg.ordering, uploads)
+	uploadGroups := applyOrdering(d.cfg.Ordering, uploads)
 
 	nParallel := d.cfg.Workers
 	var errs []error
@@ -192,14 +200,14 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 		for _, upload := range uploads {
 			if d.cfg.DryRun {
 				if !d.quiet {
-					jww.FEEDBACK.Printf("[DRY RUN] Would upload: %v\n", upload)
+					d.logger.Printf("[DRY RUN] Would upload: %v\n", upload)
 				}
 				continue
 			}
 
 			sem <- struct{}{}
 			go func(upload *fileToUpload) {
-				if err := doSingleUpload(ctx, bucket, upload); err != nil {
+				if err := d.doSingleUpload(ctx, bucket, upload); err != nil {
 					errMu.Lock()
 					defer errMu.Unlock()
 					errs = append(errs, err)
@@ -214,7 +222,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	}
 
 	if d.cfg.MaxDeletes != -1 && len(deletes) > d.cfg.MaxDeletes {
-		jww.WARN.Printf("Skipping %d deletes because it is more than --maxDeletes (%d). If this is expected, set --maxDeletes to a larger number, or -1 to disable this check.\n", len(deletes), d.cfg.MaxDeletes)
+		d.logger.Warnf("Skipping %d deletes because it is more than --maxDeletes (%d). If this is expected, set --maxDeletes to a larger number, or -1 to disable this check.\n", len(deletes), d.cfg.MaxDeletes)
 		d.summary.NumDeletes = 0
 	} else {
 		// Apply deletes in parallel.
@@ -223,16 +231,16 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 		for _, del := range deletes {
 			if d.cfg.DryRun {
 				if !d.quiet {
-					jww.FEEDBACK.Printf("[DRY RUN] Would delete %s\n", del)
+					d.logger.Printf("[DRY RUN] Would delete %s\n", del)
 				}
 				continue
 			}
 			sem <- struct{}{}
 			go func(del string) {
-				jww.INFO.Printf("Deleting %s...\n", del)
+				d.logger.Infof("Deleting %s...\n", del)
 				if err := bucket.Delete(ctx, del); err != nil {
 					if gcerrors.Code(err) == gcerrors.NotFound {
-						jww.WARN.Printf("Failed to delete %q because it wasn't found: %v", del, err)
+						d.logger.Warnf("Failed to delete %q because it wasn't found: %v", del, err)
 					} else {
 						errMu.Lock()
 						defer errMu.Unlock()
@@ -250,24 +258,24 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 
 	if len(errs) > 0 {
 		if !d.quiet {
-			jww.FEEDBACK.Printf("Encountered %d errors.\n", len(errs))
+			d.logger.Printf("Encountered %d errors.\n", len(errs))
 		}
 		return errs[0]
 	}
 	if !d.quiet {
-		jww.FEEDBACK.Println("Success!")
+		d.logger.Println("Success!")
 	}
 
 	if d.cfg.InvalidateCDN {
 		if d.target.CloudFrontDistributionID != "" {
 			if d.cfg.DryRun {
 				if !d.quiet {
-					jww.FEEDBACK.Printf("[DRY RUN] Would invalidate CloudFront CDN with ID %s\n", d.target.CloudFrontDistributionID)
+					d.logger.Printf("[DRY RUN] Would invalidate CloudFront CDN with ID %s\n", d.target.CloudFrontDistributionID)
 				}
 			} else {
-				jww.FEEDBACK.Println("Invalidating CloudFront CDN...")
-				if err := InvalidateCloudFront(ctx, d.target.CloudFrontDistributionID); err != nil {
-					jww.FEEDBACK.Printf("Failed to invalidate CloudFront CDN: %v\n", err)
+				d.logger.Println("Invalidating CloudFront CDN...")
+				if err := InvalidateCloudFront(ctx, d.target); err != nil {
+					d.logger.Printf("Failed to invalidate CloudFront CDN: %v\n", err)
 					return err
 				}
 			}
@@ -275,17 +283,17 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 		if d.target.GoogleCloudCDNOrigin != "" {
 			if d.cfg.DryRun {
 				if !d.quiet {
-					jww.FEEDBACK.Printf("[DRY RUN] Would invalidate Google Cloud CDN with origin %s\n", d.target.GoogleCloudCDNOrigin)
+					d.logger.Printf("[DRY RUN] Would invalidate Google Cloud CDN with origin %s\n", d.target.GoogleCloudCDNOrigin)
 				}
 			} else {
-				jww.FEEDBACK.Println("Invalidating Google Cloud CDN...")
+				d.logger.Println("Invalidating Google Cloud CDN...")
 				if err := InvalidateGoogleCloudCDN(ctx, d.target.GoogleCloudCDNOrigin); err != nil {
-					jww.FEEDBACK.Printf("Failed to invalidate Google Cloud CDN: %v\n", err)
+					d.logger.Printf("Failed to invalidate Google Cloud CDN: %v\n", err)
 					return err
 				}
 			}
 		}
-		jww.FEEDBACK.Println("Success!")
+		d.logger.Println("Success!")
 	}
 	return nil
 }
@@ -300,8 +308,8 @@ func summarizeChanges(uploads []*fileToUpload, deletes []string) string {
 }
 
 // doSingleUpload executes a single file upload.
-func doSingleUpload(ctx context.Context, bucket *blob.Bucket, upload *fileToUpload) error {
-	jww.INFO.Printf("Uploading %v...\n", upload)
+func (d *Deployer) doSingleUpload(ctx context.Context, bucket *blob.Bucket, upload *fileToUpload) error {
+	d.logger.Infof("Uploading %v...\n", upload)
 	opts := &blob.WriterOptions{
 		CacheControl:    upload.Local.CacheControl(),
 		ContentEncoding: upload.Local.ContentEncoding(),
@@ -340,14 +348,14 @@ type localFile struct {
 	UploadSize int64
 
 	fs         afero.Fs
-	matcher    *Matcher
+	matcher    *deployconfig.Matcher
 	md5        []byte       // cache
 	gzipped    bytes.Buffer // cached of gzipped contents if gzipping
 	mediaTypes media.Types
 }
 
 // newLocalFile initializes a *localFile.
-func newLocalFile(fs afero.Fs, nativePath, slashpath string, m *Matcher, mt media.Types) (*localFile, error) {
+func newLocalFile(fs afero.Fs, nativePath, slashpath string, m *deployconfig.Matcher, mt media.Types) (*localFile, error) {
 	f, err := fs.Open(nativePath)
 	if err != nil {
 		return nil, err
@@ -479,7 +487,7 @@ func knownHiddenDirectory(name string) bool {
 
 // walkLocal walks the source directory and returns a flat list of files,
 // using localFile.SlashPath as the map keys.
-func walkLocal(fs afero.Fs, matchers []*Matcher, include, exclude glob.Glob, mediaTypes media.Types) (map[string]*localFile, error) {
+func (d *Deployer) walkLocal(fs afero.Fs, matchers []*deployconfig.Matcher, include, exclude glob.Glob, mediaTypes media.Types, mappath func(string) string) (map[string]*localFile, error) {
 	retval := map[string]*localFile{}
 	err := afero.Walk(fs, "", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -509,21 +517,26 @@ func walkLocal(fs afero.Fs, matchers []*Matcher, include, exclude glob.Glob, med
 		// Check include/exclude matchers.
 		slashpath := filepath.ToSlash(path)
 		if include != nil && !include.Match(slashpath) {
-			jww.INFO.Printf("  dropping %q due to include\n", slashpath)
+			d.logger.Infof("  dropping %q due to include\n", slashpath)
 			return nil
 		}
 		if exclude != nil && exclude.Match(slashpath) {
-			jww.INFO.Printf("  dropping %q due to exclude\n", slashpath)
+			d.logger.Infof("  dropping %q due to exclude\n", slashpath)
 			return nil
 		}
 
 		// Find the first matching matcher (if any).
-		var m *Matcher
+		var m *deployconfig.Matcher
 		for _, cur := range matchers {
 			if cur.Matches(slashpath) {
 				m = cur
 				break
 			}
+		}
+		// Apply any additional modifications to the local path, to map it to
+		// the remote path.
+		if mappath != nil {
+			slashpath = mappath(slashpath)
 		}
 		lf, err := newLocalFile(fs, path, slashpath, m, mediaTypes)
 		if err != nil {
@@ -538,8 +551,17 @@ func walkLocal(fs afero.Fs, matchers []*Matcher, include, exclude glob.Glob, med
 	return retval, nil
 }
 
+// stripIndexHTML remaps keys matching "<dir>/index.html" to "<dir>/".
+func stripIndexHTML(slashpath string) string {
+	const suffix = "/index.html"
+	if strings.HasSuffix(slashpath, suffix) {
+		return slashpath[:len(slashpath)-len(suffix)+1]
+	}
+	return slashpath
+}
+
 // walkRemote walks the target bucket and returns a flat list.
-func walkRemote(ctx context.Context, bucket *blob.Bucket, include, exclude glob.Glob) (map[string]*blob.ListObject, error) {
+func (d *Deployer) walkRemote(ctx context.Context, bucket *blob.Bucket, include, exclude glob.Glob) (map[string]*blob.ListObject, error) {
 	retval := map[string]*blob.ListObject{}
 	iter := bucket.List(nil)
 	for {
@@ -552,11 +574,11 @@ func walkRemote(ctx context.Context, bucket *blob.Bucket, include, exclude glob.
 		}
 		// Check include/exclude matchers.
 		if include != nil && !include.Match(obj.Key) {
-			jww.INFO.Printf("  remote dropping %q due to include\n", obj.Key)
+			d.logger.Infof("  remote dropping %q due to include\n", obj.Key)
 			continue
 		}
 		if exclude != nil && exclude.Match(obj.Key) {
-			jww.INFO.Printf("  remote dropping %q due to exclude\n", obj.Key)
+			d.logger.Infof("  remote dropping %q due to exclude\n", obj.Key)
 			continue
 		}
 		// If the remote didn't give us an MD5, use remote attributes MD5, if that doesn't exist compute one.
@@ -629,7 +651,7 @@ func (u *fileToUpload) String() string {
 // findDiffs diffs localFiles vs remoteFiles to see what changes should be
 // applied to the remote target. It returns a slice of *fileToUpload and a
 // slice of paths for files to delete.
-func findDiffs(localFiles map[string]*localFile, remoteFiles map[string]*blob.ListObject, force bool) ([]*fileToUpload, []string) {
+func (d *Deployer) findDiffs(localFiles map[string]*localFile, remoteFiles map[string]*blob.ListObject, force bool) ([]*fileToUpload, []string) {
 	var uploads []*fileToUpload
 	var deletes []string
 
@@ -670,8 +692,6 @@ func findDiffs(localFiles map[string]*localFile, remoteFiles map[string]*blob.Li
 			} else if !bytes.Equal(lf.MD5(), remoteFile.MD5) {
 				upload = true
 				reason = reasonMD5Differs
-			} else {
-				// Nope! Leave uploaded = false.
 			}
 			found[path] = true
 		} else {
@@ -680,10 +700,10 @@ func findDiffs(localFiles map[string]*localFile, remoteFiles map[string]*blob.Li
 			reason = reasonNotFound
 		}
 		if upload {
-			jww.DEBUG.Printf("%s needs to be uploaded: %v\n", path, reason)
+			d.logger.Debugf("%s needs to be uploaded: %v\n", path, reason)
 			uploads = append(uploads, &fileToUpload{lf, reason})
 		} else {
-			jww.DEBUG.Printf("%s exists at target and does not need to be uploaded", path)
+			d.logger.Debugf("%s exists at target and does not need to be uploaded", path)
 		}
 	}
 

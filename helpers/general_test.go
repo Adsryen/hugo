@@ -1,4 +1,4 @@
-// Copyright 2023 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,17 +14,13 @@
 package helpers_test
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/gohugoio/hugo/common/loggers"
 	"github.com/gohugoio/hugo/helpers"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/spf13/afero"
 )
 
 func TestResolveMarkup(t *testing.T) {
@@ -37,9 +33,9 @@ func TestResolveMarkup(t *testing.T) {
 		{"md", "markdown"},
 		{"markdown", "markdown"},
 		{"mdown", "markdown"},
-		{"asciidocext", "asciidocext"},
-		{"adoc", "asciidocext"},
-		{"ad", "asciidocext"},
+		{"asciidocext", "asciidoc"},
+		{"adoc", "asciidoc"},
+		{"ad", "asciidoc"},
 		{"rst", "rst"},
 		{"pandoc", "pandoc"},
 		{"pdc", "pandoc"},
@@ -51,60 +47,6 @@ func TestResolveMarkup(t *testing.T) {
 		result := spec.ResolveMarkup(this.in)
 		if result != this.expect {
 			t.Errorf("[%d] got %s but expected %s", i, result, this.expect)
-		}
-	}
-}
-
-func TestDistinctLoggerDoesNotLockOnWarningPanic(t *testing.T) {
-	// Testing to make sure logger mutex doesn't lock if warnings cause panics.
-	// func Warnf() of DistinctLogger is defined in general.go
-	l := helpers.NewDistinctLogger(loggers.NewWarningLogger())
-
-	// Set PanicOnWarning to true to reproduce issue 9380
-	// Ensure global variable loggers.PanicOnWarning is reset to old value after test
-	if !loggers.PanicOnWarning.Load() {
-		loggers.PanicOnWarning.Store(true)
-		defer func() {
-			loggers.PanicOnWarning.Store(false)
-		}()
-	}
-
-	// Establish timeout in case a lock occurs:
-	timeIsUp := make(chan bool)
-	timeOutSeconds := 1
-	go func() {
-		time.Sleep(time.Second * time.Duration(timeOutSeconds))
-		timeIsUp <- true
-	}()
-
-	// Attempt to run multiple logging threads in parallel
-	counterC := make(chan int)
-	goroutines := 5
-
-	for i := 0; i < goroutines; i++ {
-		go func() {
-			defer func() {
-				// Intentional panic successfully recovered - notify counter channel
-				recover()
-				counterC <- 1
-			}()
-
-			l.Warnf("Placeholder template message: %v", "In this test, logging a warning causes a panic.")
-		}()
-	}
-
-	// All goroutines should complete before timeout
-	var counter int
-	for {
-		select {
-		case <-counterC:
-			counter++
-			if counter == goroutines {
-				return
-			}
-		case <-timeIsUp:
-			t.Errorf("Unable to log warnings with --panicOnWarning within alloted time of: %v seconds. Investigate possible mutex locking on panic in distinct warning logger.", timeOutSeconds)
-			return
 		}
 	}
 }
@@ -259,7 +201,7 @@ func TestReaderContains(t *testing.T) {
 }
 
 func TestGetTitleFunc(t *testing.T) {
-	title := "somewhere over the rainbow"
+	title := "somewhere over the Rainbow"
 	c := qt.New(t)
 
 	c.Assert(helpers.GetTitleFunc("go")(title), qt.Equals, "Somewhere Over The Rainbow")
@@ -269,6 +211,8 @@ func TestGetTitleFunc(t *testing.T) {
 	c.Assert(helpers.GetTitleFunc("ap")(title), qt.Equals, "Somewhere Over the Rainbow")
 	c.Assert(helpers.GetTitleFunc("")(title), qt.Equals, "Somewhere Over the Rainbow")
 	c.Assert(helpers.GetTitleFunc("unknown")(title), qt.Equals, "Somewhere Over the Rainbow")
+	c.Assert(helpers.GetTitleFunc("none")(title), qt.Equals, title)
+	c.Assert(helpers.GetTitleFunc("firstupper")(title), qt.Equals, "Somewhere over the Rainbow")
 }
 
 func BenchmarkReaderContains(b *testing.B) {
@@ -310,93 +254,6 @@ func TestUniqueStringsSorted(t *testing.T) {
 	c.Assert(helpers.UniqueStringsSorted(nil), qt.IsNil)
 }
 
-func TestFastMD5FromFile(t *testing.T) {
-	fs := afero.NewMemMapFs()
-
-	if err := afero.WriteFile(fs, "small.txt", []byte("abc"), 0777); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := afero.WriteFile(fs, "small2.txt", []byte("abd"), 0777); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := afero.WriteFile(fs, "bigger.txt", []byte(strings.Repeat("a bc d e", 100)), 0777); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := afero.WriteFile(fs, "bigger2.txt", []byte(strings.Repeat("c d e f g", 100)), 0777); err != nil {
-		t.Fatal(err)
-	}
-
-	c := qt.New(t)
-
-	sf1, err := fs.Open("small.txt")
-	c.Assert(err, qt.IsNil)
-	sf2, err := fs.Open("small2.txt")
-	c.Assert(err, qt.IsNil)
-
-	bf1, err := fs.Open("bigger.txt")
-	c.Assert(err, qt.IsNil)
-	bf2, err := fs.Open("bigger2.txt")
-	c.Assert(err, qt.IsNil)
-
-	defer sf1.Close()
-	defer sf2.Close()
-	defer bf1.Close()
-	defer bf2.Close()
-
-	m1, err := helpers.MD5FromFileFast(sf1)
-	c.Assert(err, qt.IsNil)
-	c.Assert(m1, qt.Equals, "e9c8989b64b71a88b4efb66ad05eea96")
-
-	m2, err := helpers.MD5FromFileFast(sf2)
-	c.Assert(err, qt.IsNil)
-	c.Assert(m2, qt.Not(qt.Equals), m1)
-
-	m3, err := helpers.MD5FromFileFast(bf1)
-	c.Assert(err, qt.IsNil)
-	c.Assert(m3, qt.Not(qt.Equals), m2)
-
-	m4, err := helpers.MD5FromFileFast(bf2)
-	c.Assert(err, qt.IsNil)
-	c.Assert(m4, qt.Not(qt.Equals), m3)
-
-	m5, err := helpers.MD5FromReader(bf2)
-	c.Assert(err, qt.IsNil)
-	c.Assert(m5, qt.Not(qt.Equals), m4)
-}
-
-func BenchmarkMD5FromFileFast(b *testing.B) {
-	fs := afero.NewMemMapFs()
-
-	for _, full := range []bool{false, true} {
-		b.Run(fmt.Sprintf("full=%t", full), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				if err := afero.WriteFile(fs, "file.txt", []byte(strings.Repeat("1234567890", 2000)), 0777); err != nil {
-					b.Fatal(err)
-				}
-				f, err := fs.Open("file.txt")
-				if err != nil {
-					b.Fatal(err)
-				}
-				b.StartTimer()
-				if full {
-					if _, err := helpers.MD5FromReader(f); err != nil {
-						b.Fatal(err)
-					}
-				} else {
-					if _, err := helpers.MD5FromFileFast(f); err != nil {
-						b.Fatal(err)
-					}
-				}
-				f.Close()
-			}
-		})
-	}
-}
-
 func BenchmarkUniqueStrings(b *testing.B) {
 	input := []string{"a", "b", "d", "e", "d", "h", "a", "i"}
 
@@ -404,7 +261,7 @@ func BenchmarkUniqueStrings(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			result := helpers.UniqueStrings(input)
 			if len(result) != 6 {
-				b.Fatal(fmt.Sprintf("invalid count: %d", len(result)))
+				b.Fatalf("invalid count: %d", len(result))
 			}
 		}
 	})
@@ -423,7 +280,7 @@ func BenchmarkUniqueStrings(b *testing.B) {
 
 			result := helpers.UniqueStringsReuse(inputc)
 			if len(result) != 6 {
-				b.Fatal(fmt.Sprintf("invalid count: %d", len(result)))
+				b.Fatalf("invalid count: %d", len(result))
 			}
 		}
 	})
@@ -442,7 +299,7 @@ func BenchmarkUniqueStrings(b *testing.B) {
 
 			result := helpers.UniqueStringsSorted(inputc)
 			if len(result) != 6 {
-				b.Fatal(fmt.Sprintf("invalid count: %d", len(result)))
+				b.Fatalf("invalid count: %d", len(result))
 			}
 		}
 	})
