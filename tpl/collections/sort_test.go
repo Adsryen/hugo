@@ -14,6 +14,7 @@
 package collections
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -240,9 +241,9 @@ func TestSort(t *testing.T) {
 			var result any
 			var err error
 			if test.sortByField == nil {
-				result, err = ns.Sort(test.seq)
+				result, err = ns.Sort(context.Background(), test.seq)
 			} else {
-				result, err = ns.Sort(test.seq, test.sortByField, test.sortAsc)
+				result, err = ns.Sort(context.Background(), test.seq, test.sortByField, test.sortAsc)
 			}
 
 			if b, ok := test.expect.(bool); ok && !b {
@@ -258,5 +259,13 @@ func TestSort(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func BenchmarkSortMap(b *testing.B) {
+	ns := newNs()
+	m := map[string]int{"1": 10, "2": 20, "3": 30, "4": 40, "5": 50}
+	for i := 0; i < b.N; i++ {
+		ns.Sort(context.Background(), m)
 	}
 }

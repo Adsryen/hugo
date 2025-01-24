@@ -1,4 +1,4 @@
-// Copyright 2023 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,10 +21,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gohugoio/hugo/hugofs/files"
-	"github.com/gohugoio/hugo/identity"
 	"github.com/gohugoio/hugo/markup/tableofcontents"
-	"github.com/gohugoio/hugo/tpl"
 
 	"github.com/gohugoio/hugo/resources/resource"
 
@@ -32,6 +29,7 @@ import (
 
 	"github.com/gohugoio/hugo/common/hugo"
 	"github.com/gohugoio/hugo/common/maps"
+	"github.com/gohugoio/hugo/common/paths"
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/hugofs"
 	"github.com/gohugoio/hugo/langs"
@@ -54,7 +52,7 @@ func newTestPage() *testPage {
 
 func newTestPageWithFile(filename string) *testPage {
 	filename = filepath.FromSlash(filename)
-	file := source.NewTestFile(filename)
+	file := source.NewFileInfoFrom(filename, filename)
 
 	l, err := langs.NewLanguage(
 		"en",
@@ -107,50 +105,42 @@ type testPage struct {
 	params map[string]any
 	data   map[string]any
 
-	file source.File
+	file *source.File
 
 	currentSection *testPage
 	sectionEntries []string
 }
 
-func (p *testPage) Err() resource.ResourceError {
-	return nil
-}
-
 func (p *testPage) Aliases() []string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) AllTranslations() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) AlternativeOutputFormats() OutputFormats {
-	panic("tespage: not implemented")
-}
-
-func (p *testPage) Author() Author {
-	return Author{}
-}
-
-func (p *testPage) Authors() AuthorList {
-	return nil
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) BaseFileName() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
-func (p *testPage) BundleType() files.ContentClass {
-	panic("tespage: not implemented")
+func (p *testPage) BundleType() string {
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Content(context.Context) (any, error) {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
+}
+
+func (p *testPage) Markup(...any) Markup {
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) ContentBaseName() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) CurrentSection() Page {
@@ -177,12 +167,16 @@ func (p *testPage) Description() string {
 	return ""
 }
 
+func (p *testPage) ContentWithoutSummary(ctx context.Context) (template.HTML, error) {
+	return "", nil
+}
+
 func (p *testPage) Dir() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Draft() bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Eq(other any) bool {
@@ -193,28 +187,20 @@ func (p *testPage) ExpiryDate() time.Time {
 	return p.expiryDate
 }
 
-func (p *testPage) Ext() string {
-	panic("tespage: not implemented")
-}
-
-func (p *testPage) Extension() string {
-	panic("tespage: not implemented")
-}
-
-func (p *testPage) File() source.File {
+func (p *testPage) File() *source.File {
 	return p.file
 }
 
 func (p *testPage) FileInfo() hugofs.FileMetaInfo {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Filename() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) FirstSection() Page {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) FuzzyWordCount(context.Context) int {
@@ -222,19 +208,15 @@ func (p *testPage) FuzzyWordCount(context.Context) int {
 }
 
 func (p *testPage) GetPage(ref string) (Page, error) {
-	panic("tespage: not implemented")
-}
-
-func (p *testPage) GetPageWithTemplateInfo(info tpl.Info, ref string) (Page, error) {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) GetParam(key string) any {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) GetTerms(taxonomy string) Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) GetRelatedDocsHandler() *RelatedDocsHandler {
@@ -250,27 +232,27 @@ func (p *testPage) CodeOwners() []string {
 }
 
 func (p *testPage) HasMenuCurrent(menuID string, me *navigation.MenuEntry) bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) HasShortcode(name string) bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Hugo() hugo.HugoInfo {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
-func (p *testPage) InSection(other any) (bool, error) {
-	panic("tespage: not implemented")
+func (p *testPage) InSection(other any) bool {
+	panic("testpage: not implemented")
 }
 
-func (p *testPage) IsAncestor(other any) (bool, error) {
-	panic("tespage: not implemented")
+func (p *testPage) IsAncestor(other any) bool {
+	panic("testpage: not implemented")
 }
 
-func (p *testPage) IsDescendant(other any) (bool, error) {
-	panic("tespage: not implemented")
+func (p *testPage) IsDescendant(other any) bool {
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) IsDraft() bool {
@@ -278,27 +260,31 @@ func (p *testPage) IsDraft() bool {
 }
 
 func (p *testPage) IsHome() bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) IsMenuCurrent(menuID string, inme *navigation.MenuEntry) bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) IsNode() bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) IsPage() bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) IsSection() bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) IsTranslated() bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
+}
+
+func (p *testPage) Ancestors() Pages {
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Keywords() []string {
@@ -314,7 +300,7 @@ func (p *testPage) Lang() string {
 }
 
 func (p *testPage) Language() *langs.Language {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) LanguagePrefix() string {
@@ -348,11 +334,11 @@ func (p *testPage) LinkTitle() string {
 }
 
 func (p *testPage) LogicalName() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) MediaType() media.Type {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Menus() navigation.PageMenus {
@@ -360,11 +346,11 @@ func (p *testPage) Menus() navigation.PageMenus {
 }
 
 func (p *testPage) Name() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Next() Page {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) NextInSection() Page {
@@ -376,19 +362,19 @@ func (p *testPage) NextPage() Page {
 }
 
 func (p *testPage) OutputFormats() OutputFormats {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Pages() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RegularPages() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RegularPagesRecursive() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Paginate(seq any, options ...any) (*Pager, error) {
@@ -412,35 +398,31 @@ func (p *testPage) Page() Page {
 }
 
 func (p *testPage) Parent() Page {
-	panic("tespage: not implemented")
-}
-
-func (p *testPage) Ancestors() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Path() string {
 	return p.path
 }
 
-func (p *testPage) Pathc() string {
-	return p.path
+func (p *testPage) PathInfo() *paths.Path {
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Permalink() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Plain(context.Context) string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) PlainWords(context.Context) []string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Prev() Page {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) PrevInSection() Page {
@@ -455,20 +437,20 @@ func (p *testPage) PublishDate() time.Time {
 	return p.pubDate
 }
 
-func (p *testPage) RSSLink() template.URL {
-	return ""
+func (p *testPage) RawContent() string {
+	panic("testpage: not implemented")
 }
 
-func (p *testPage) RawContent() string {
-	panic("tespage: not implemented")
+func (p *testPage) RenderShortcodes(context.Context) (template.HTML, error) {
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) ReadingTime(context.Context) int {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Ref(argsm map[string]any) (string, error) {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RefFrom(argsm map[string]any, source any) (string, error) {
@@ -476,11 +458,11 @@ func (p *testPage) RefFrom(argsm map[string]any, source any) (string, error) {
 }
 
 func (p *testPage) RelPermalink() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RelRef(argsm map[string]any) (string, error) {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RelRefFrom(argsm map[string]any, source any) (string, error) {
@@ -488,27 +470,27 @@ func (p *testPage) RelRefFrom(argsm map[string]any, source any) (string, error) 
 }
 
 func (p *testPage) Render(ctx context.Context, layout ...string) (template.HTML, error) {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RenderString(ctx context.Context, args ...any) (template.HTML, error) {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) ResourceType() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Resources() resource.Resources {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Scratch() *maps.Scratch {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Store() *maps.Scratch {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) RelatedKeywords(cfg related.IndexConfig) ([]related.Keyword, error) {
@@ -525,7 +507,7 @@ func (p *testPage) Section() string {
 }
 
 func (p *testPage) Sections() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) SectionsEntries() []string {
@@ -541,7 +523,7 @@ func (p *testPage) Site() Site {
 }
 
 func (p *testPage) Sites() Sites {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Slug() string {
@@ -553,11 +535,11 @@ func (p *testPage) String() string {
 }
 
 func (p *testPage) Summary(context.Context) template.HTML {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) TableOfContents(context.Context) template.HTML {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Title() string {
@@ -565,7 +547,7 @@ func (p *testPage) Title() string {
 }
 
 func (p *testPage) TranslationBaseName() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) TranslationKey() string {
@@ -573,11 +555,11 @@ func (p *testPage) TranslationKey() string {
 }
 
 func (p *testPage) Translations() Pages {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Truncated(context.Context) bool {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Type() string {
@@ -589,7 +571,7 @@ func (p *testPage) URL() string {
 }
 
 func (p *testPage) UniqueID() string {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func (p *testPage) Weight() int {
@@ -597,11 +579,7 @@ func (p *testPage) Weight() int {
 }
 
 func (p *testPage) WordCount(context.Context) int {
-	panic("tespage: not implemented")
-}
-
-func (p *testPage) GetIdentity() identity.Identity {
-	panic("tespage: not implemented")
+	panic("testpage: not implemented")
 }
 
 func createTestPages(num int) Pages {

@@ -19,12 +19,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bep/logg"
 	"github.com/gohugoio/hugo/common/types"
 	"github.com/gohugoio/hugo/config/testconfig"
 
 	"github.com/gohugoio/hugo/tpl/tplimpl"
 
-	"github.com/gohugoio/hugo/common/loggers"
 	"github.com/gohugoio/hugo/resources/page"
 	"github.com/spf13/afero"
 
@@ -33,8 +33,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/gohugoio/hugo/config"
 )
-
-var logger = loggers.NewErrorLogger()
 
 type i18nTest struct {
 	name                             string
@@ -389,14 +387,13 @@ other = "{{ . }} miesiąca"
 			},
 		},
 	} {
-
 		c.Run(test.name, func(c *qt.C) {
 			cfg := config.New()
 			cfg.Set("enableMissingTranslationPlaceholders", true)
 			cfg.Set("publishDir", "public")
 			afs := afero.NewMemMapFs()
 
-			err := afero.WriteFile(afs, filepath.Join("i18n", test.lang+".toml"), []byte(test.templ), 0755)
+			err := afero.WriteFile(afs, filepath.Join("i18n", test.lang+".toml"), []byte(test.templ), 0o755)
 			c.Assert(err, qt.IsNil)
 
 			d, tp := prepareDeps(afs, cfg)
@@ -406,11 +403,9 @@ other = "{{ . }} miesiąca"
 
 			for _, variant := range test.variants {
 				c.Assert(f(ctx, test.id, variant.Key), qt.Equals, variant.Value, qt.Commentf("input: %v", variant.Key))
-				c.Assert(int(d.Log.LogCounters().WarnCounter.Count()), qt.Equals, 0)
+				c.Assert(d.Log.LoggCount(logg.LevelWarn), qt.Equals, 0)
 			}
-
 		})
-
 	}
 }
 
@@ -428,8 +423,7 @@ type noCountField struct {
 	Counts int
 }
 
-type countMethod struct {
-}
+type countMethod struct{}
 
 func (c countMethod) Count() any {
 	return 32.5
@@ -467,7 +461,7 @@ func prepareTranslationProvider(t testing.TB, test i18nTest, cfg config.Provider
 	afs := afero.NewMemMapFs()
 
 	for file, content := range test.data {
-		err := afero.WriteFile(afs, filepath.Join("i18n", file), []byte(content), 0755)
+		err := afero.WriteFile(afs, filepath.Join("i18n", file), []byte(content), 0o755)
 		c.Assert(err, qt.IsNil)
 	}
 
