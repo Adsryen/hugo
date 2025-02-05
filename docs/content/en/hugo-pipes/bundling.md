@@ -6,10 +6,13 @@ categories: [asset management]
 keywords: []
 menu:
   docs:
-    parent: pipes
-    weight: 60
-weight: 60
-signature: ["resources.Concat TARGET_PATH SLICE_RESOURCES"]
+    parent: hugo-pipes
+    weight: 90
+weight: 90
+action:
+  aliases: []
+  returnType: resource.Resource
+  signatures: ['resources.Concat TARGETPATH [RESOURCE...]']
 ---
 
 ## Usage

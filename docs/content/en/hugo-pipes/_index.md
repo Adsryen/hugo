@@ -1,10 +1,12 @@
 ---
-title: Hugo Pipes Overview
-categories: [asset management]
+title: Hugo Pipes
+linkTitle: In this section
+categories: []
 keywords: []
 menu:
   docs:
-    parent: pipes
+    identifier: hugo-pipes-in-this-section
+    parent: hugo-pipes
     weight: 10
 weight: 10
 ---

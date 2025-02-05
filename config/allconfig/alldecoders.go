@@ -1,4 +1,4 @@
-// Copyright 2023 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,18 +18,22 @@ import (
 	"strings"
 
 	"github.com/gohugoio/hugo/cache/filecache"
+
+	"github.com/gohugoio/hugo/cache/httpcache"
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/common/types"
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/config/privacy"
 	"github.com/gohugoio/hugo/config/security"
 	"github.com/gohugoio/hugo/config/services"
-	"github.com/gohugoio/hugo/deploy"
+	"github.com/gohugoio/hugo/deploy/deployconfig"
+	"github.com/gohugoio/hugo/hugolib/segments"
 	"github.com/gohugoio/hugo/langs"
 	"github.com/gohugoio/hugo/markup/markup_config"
 	"github.com/gohugoio/hugo/media"
 	"github.com/gohugoio/hugo/minifiers"
 	"github.com/gohugoio/hugo/modules"
+
 	"github.com/gohugoio/hugo/navigation"
 	"github.com/gohugoio/hugo/output"
 	"github.com/gohugoio/hugo/related"
@@ -49,10 +53,11 @@ type decodeConfig struct {
 }
 
 type decodeWeight struct {
-	key         string
-	decode      func(decodeWeight, decodeConfig) error
-	getCompiler func(c *Config) configCompiler
-	weight      int
+	key                  string
+	decode               func(decodeWeight, decodeConfig) error
+	getCompiler          func(c *Config) configCompiler
+	weight               int
+	internalOrDeprecated bool // Hide it from the docs.
 }
 
 var allDecoderSetups = map[string]decodeWeight{
@@ -93,6 +98,18 @@ var allDecoderSetups = map[string]decodeWeight{
 			return err
 		},
 	},
+	"httpcache": {
+		key: "httpcache",
+		decode: func(d decodeWeight, p decodeConfig) error {
+			var err error
+			p.c.HTTPCache, err = httpcache.DecodeConfig(p.bcfg, p.p.GetStringMap(d.key))
+			if p.c.IgnoreCache {
+				p.c.HTTPCache.Cache.For.Excludes = []string{"**"}
+				p.c.HTTPCache.Cache.For.Includes = []string{}
+			}
+			return err
+		},
+	},
 	"build": {
 		key: "build",
 		decode: func(d decodeWeight, p decodeConfig) error {
@@ -119,6 +136,14 @@ var allDecoderSetups = map[string]decodeWeight{
 			return err
 		},
 	},
+	"segments": {
+		key: "segments",
+		decode: func(d decodeWeight, p decodeConfig) error {
+			var err error
+			p.c.Segments, err = segments.DecodeSegments(p.p.GetStringMap(d.key))
+			return err
+		},
+	},
 	"server": {
 		key: "server",
 		decode: func(d decodeWeight, p decodeConfig) error {
@@ -138,8 +163,8 @@ var allDecoderSetups = map[string]decodeWeight{
 			return err
 		},
 	},
-	"mediaTypes": {
-		key: "mediaTypes",
+	"mediatypes": {
+		key: "mediatypes",
 		decode: func(d decodeWeight, p decodeConfig) error {
 			var err error
 			p.c.MediaTypes, err = media.DecodeTypes(p.p.GetStringMap(d.key))
@@ -150,7 +175,7 @@ var allDecoderSetups = map[string]decodeWeight{
 		key: "outputs",
 		decode: func(d decodeWeight, p decodeConfig) error {
 			defaults := createDefaultOutputFormats(p.c.OutputFormats.Config)
-			m := p.p.GetStringMap("outputs")
+			m := maps.CleanConfigStringMap(p.p.GetStringMap("outputs"))
 			p.c.Outputs = make(map[string][]string)
 			for k, v := range m {
 				s := types.ToStringSlicePreserveString(v)
@@ -168,8 +193,8 @@ var allDecoderSetups = map[string]decodeWeight{
 			return nil
 		},
 	},
-	"outputFormats": {
-		key: "outputFormats",
+	"outputformats": {
+		key: "outputformats",
 		decode: func(d decodeWeight, p decodeConfig) error {
 			var err error
 			p.c.OutputFormats, err = output.DecodeConfig(p.c.MediaTypes.Config, p.p.Get(d.key))
@@ -206,8 +231,9 @@ var allDecoderSetups = map[string]decodeWeight{
 	"permalinks": {
 		key: "permalinks",
 		decode: func(d decodeWeight, p decodeConfig) error {
-			p.c.Permalinks = maps.CleanConfigStringMapString(p.p.GetStringMapString(d.key))
-			return nil
+			var err error
+			p.c.Permalinks, err = page.DecodePermalinksConfig(p.p.GetStringMap(d.key))
+			return err
 		},
 	},
 	"sitemap": {
@@ -238,7 +264,7 @@ var allDecoderSetups = map[string]decodeWeight{
 			} else {
 				p.c.Related = related.DefaultConfig
 				if _, found := p.c.Taxonomies["tag"]; found {
-					p.c.Related.Add(related.IndexConfig{Name: "tags", Weight: 80})
+					p.c.Related.Add(related.IndexConfig{Name: "tags", Weight: 80, Type: related.TypeBasic})
 				}
 			}
 			return nil
@@ -289,7 +315,7 @@ var allDecoderSetups = map[string]decodeWeight{
 		key: "cascade",
 		decode: func(d decodeWeight, p decodeConfig) error {
 			var err error
-			p.c.Cascade, err = page.DecodeCascadeConfig(p.p.Get(d.key))
+			p.c.Cascade, err = page.DecodeCascadeConfig(nil, p.p.Get(d.key))
 			return err
 		},
 	},
@@ -299,6 +325,41 @@ var allDecoderSetups = map[string]decodeWeight{
 			var err error
 			p.c.Menus, err = navigation.DecodeConfig(p.p.Get(d.key))
 			return err
+		},
+	},
+	"page": {
+		key: "page",
+		decode: func(d decodeWeight, p decodeConfig) error {
+			p.c.Page = config.PageConfig{
+				NextPrevSortOrder:          "desc",
+				NextPrevInSectionSortOrder: "desc",
+			}
+			if p.p.IsSet(d.key) {
+				if err := mapstructure.WeakDecode(p.p.Get(d.key), &p.c.Page); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
+		getCompiler: func(c *Config) configCompiler {
+			return &c.Page
+		},
+	},
+	"pagination": {
+		key: "pagination",
+		decode: func(d decodeWeight, p decodeConfig) error {
+			p.c.Pagination = config.Pagination{
+				PagerSize: 10,
+				Path:      "page",
+			}
+			if p.p.IsSet(d.key) {
+				if err := mapstructure.WeakDecode(p.p.Get(d.key), &p.c.Pagination); err != nil {
+					return err
+				}
+			}
+
+			return nil
 		},
 	},
 	"privacy": {
@@ -329,23 +390,25 @@ var allDecoderSetups = map[string]decodeWeight{
 		key: "deployment",
 		decode: func(d decodeWeight, p decodeConfig) error {
 			var err error
-			p.c.Deployment, err = deploy.DecodeConfig(p.p)
+			p.c.Deployment, err = deployconfig.DecodeConfig(p.p)
 			return err
 		},
 	},
 	"author": {
 		key: "author",
 		decode: func(d decodeWeight, p decodeConfig) error {
-			p.c.Author = p.p.GetStringMap(d.key)
+			p.c.Author = maps.CleanConfigStringMap(p.p.GetStringMap(d.key))
 			return nil
 		},
+		internalOrDeprecated: true,
 	},
 	"social": {
 		key: "social",
 		decode: func(d decodeWeight, p decodeConfig) error {
-			p.c.Social = p.p.GetStringMapString(d.key)
+			p.c.Social = maps.CleanConfigStringMapString(p.p.GetStringMapString(d.key))
 			return nil
 		},
+		internalOrDeprecated: true,
 	},
 	"uglyurls": {
 		key: "uglyurls",
@@ -356,16 +419,36 @@ var allDecoderSetups = map[string]decodeWeight{
 				p.c.UglyURLs = vv
 			case string:
 				p.c.UglyURLs = vv == "true"
+			case maps.Params:
+				p.c.UglyURLs = cast.ToStringMapBool(maps.CleanConfigStringMap(vv))
 			default:
 				p.c.UglyURLs = cast.ToStringMapBool(v)
 			}
 			return nil
 		},
+		internalOrDeprecated: true,
 	},
 	"internal": {
 		key: "internal",
 		decode: func(d decodeWeight, p decodeConfig) error {
 			return mapstructure.WeakDecode(p.p.GetStringMap(d.key), &p.c.Internal)
 		},
+		internalOrDeprecated: true,
 	},
+}
+
+func init() {
+	for k, v := range allDecoderSetups {
+		// Verify that k and v.key is all lower case.
+		if k != strings.ToLower(k) {
+			panic(fmt.Sprintf("key %q is not lower case", k))
+		}
+		if v.key != strings.ToLower(v.key) {
+			panic(fmt.Sprintf("key %q is not lower case", v.key))
+		}
+
+		if k != v.key {
+			panic(fmt.Sprintf("key %q is not the same as the map key %q", k, v.key))
+		}
+	}
 }

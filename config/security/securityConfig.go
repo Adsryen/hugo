@@ -34,22 +34,24 @@ const securityConfigKey = "security"
 // DefaultConfig holds the default security policy.
 var DefaultConfig = Config{
 	Exec: Exec{
-		Allow: NewWhitelist(
-			"^dart-sass-embedded$",
-			"^go$",  // for Go Modules
-			"^npx$", // used by all Node tools (Babel, PostCSS).
+		Allow: MustNewWhitelist(
+			"^(dart-)?sass(-embedded)?$", // sass, dart-sass, dart-sass-embedded.
+			"^go$",                       // for Go Modules
+			"^git$",                      // For Git info
+			"^npx$",                      // used by all Node tools (Babel, PostCSS).
 			"^postcss$",
+			"^tailwindcss$",
 		),
 		// These have been tested to work with Hugo's external programs
 		// on Windows, Linux and MacOS.
-		OsEnv: NewWhitelist(`(?i)^((HTTPS?|NO)_PROXY|PATH(EXT)?|APPDATA|TE?MP|TERM|GO\w+)$`),
+		OsEnv: MustNewWhitelist(`(?i)^((HTTPS?|NO)_PROXY|PATH(EXT)?|APPDATA|TE?MP|TERM|GO\w+|(XDG_CONFIG_)?HOME|USERPROFILE|SSH_AUTH_SOCK|DISPLAY|LANG|SYSTEMDRIVE)$`),
 	},
 	Funcs: Funcs{
-		Getenv: NewWhitelist("^HUGO_", "^CI$"),
+		Getenv: MustNewWhitelist("^HUGO_", "^CI$"),
 	},
 	HTTP: HTTP{
-		URLs:    NewWhitelist(".*"),
-		Methods: NewWhitelist("(?i)GET|POST"),
+		URLs:    MustNewWhitelist(".*"),
+		Methods: MustNewWhitelist("(?i)GET|POST"),
 	},
 }
 
@@ -115,7 +117,6 @@ func (c Config) CheckAllowedExec(name string) error {
 		}
 	}
 	return nil
-
 }
 
 func (c Config) CheckAllowedGetEnv(name string) error {
@@ -164,7 +165,6 @@ func (c Config) ToSecurityMap() map[string]any {
 		"security": m,
 	}
 	return sec
-
 }
 
 // DecodeConfig creates a privacy Config from a given Hugo configuration.
@@ -194,23 +194,21 @@ func DecodeConfig(cfg config.Provider) (Config, error) {
 	}
 
 	return sc, nil
-
 }
 
 func stringSliceToWhitelistHook() mapstructure.DecodeHookFuncType {
 	return func(
 		f reflect.Type,
 		t reflect.Type,
-		data any) (any, error) {
-
+		data any,
+	) (any, error) {
 		if t != reflect.TypeOf(Whitelist{}) {
 			return data, nil
 		}
 
 		wl := types.ToStringSlicePreserveString(data)
 
-		return NewWhitelist(wl...), nil
-
+		return NewWhitelist(wl...)
 	}
 }
 

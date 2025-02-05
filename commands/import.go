@@ -1,4 +1,4 @@
-// Copyright 2023 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,12 +19,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
-
-	jww "github.com/spf13/jwalterweatherman"
-
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +58,7 @@ Import from Jekyll requires two paths, e.g. ` + "`hugo import jekyll jekyll_root
 					return c.importFromJekyll(args)
 				},
 				withc: func(cmd *cobra.Command, r *rootCommand) {
+					cmd.ValidArgsFunction = cobra.NoFileCompletions
 					cmd.Flags().BoolVar(&c.force, "force", false, "allow import into non-empty target directory")
 				},
 			},
@@ -67,7 +66,6 @@ Import from Jekyll requires two paths, e.g. ` + "`hugo import jekyll jekyll_root
 	}
 
 	return c
-
 }
 
 type importCommand struct {
@@ -92,11 +90,12 @@ func (c *importCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, arg
 
 func (c *importCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
-	cmd.Short = "Import your site from others."
-	cmd.Long = `Import your site from other web site generators like Jekyll.
+	cmd.Short = "Import a site from another system"
+	cmd.Long = `Import a site from another system.
 
 Import requires a subcommand, e.g. ` + "`hugo import jekyll jekyll_root_path target_path`."
 
+	cmd.RunE = nil
 	return nil
 }
 
@@ -299,7 +298,7 @@ func (c *importCommand) convertJekyllMetaData(m any, postName string, postDate t
 }
 
 func (c *importCommand) convertJekyllPost(path, relPath, targetDir string, draft bool) error {
-	jww.TRACE.Println("Converting", path)
+	log.Println("Converting", path)
 
 	filename := filepath.Base(path)
 	postDate, postName, err := c.parseJekyllFilename(filename)
@@ -308,11 +307,11 @@ func (c *importCommand) convertJekyllPost(path, relPath, targetDir string, draft
 		return nil
 	}
 
-	jww.TRACE.Println(filename, postDate, postName)
+	log.Println(filename, postDate, postName)
 
 	targetFile := filepath.Join(targetDir, relPath)
 	targetParentDir := filepath.Dir(targetFile)
-	os.MkdirAll(targetParentDir, 0777)
+	os.MkdirAll(targetParentDir, 0o777)
 
 	contentBytes, err := os.ReadFile(path)
 	if err != nil {
@@ -367,7 +366,7 @@ func (c *importCommand) copyJekyllFilesAndFolders(jekyllRoot, dest string, jekyl
 				if _, ok := jekyllPostDirs[entry.Name()]; !ok {
 					err = hugio.CopyDir(fs, sfp, dfp, nil)
 					if err != nil {
-						jww.ERROR.Println(err)
+						c.r.logger.Errorln(err)
 					}
 				}
 			}
@@ -388,7 +387,7 @@ func (c *importCommand) copyJekyllFilesAndFolders(jekyllRoot, dest string, jekyl
 			if !isExcept && entry.Name()[0] != '.' && entry.Name()[0] != '_' {
 				err = hugio.CopyFile(fs, sfp, dfp)
 				if err != nil {
-					jww.ERROR.Println(err)
+					c.r.logger.Errorln(err)
 				}
 			}
 		}
@@ -398,7 +397,6 @@ func (c *importCommand) copyJekyllFilesAndFolders(jekyllRoot, dest string, jekyl
 }
 
 func (c *importCommand) importFromJekyll(args []string) error {
-
 	jekyllRoot, err := filepath.Abs(filepath.Clean(args[0]))
 	if err != nil {
 		return newUserError("path error:", args[0])
@@ -429,11 +427,7 @@ func (c *importCommand) importFromJekyll(args []string) error {
 	c.r.Println("Importing...")
 
 	fileCount := 0
-	callback := func(path string, fi hugofs.FileMetaInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
+	callback := func(path string, fi hugofs.FileMetaInfo) error {
 		if fi.IsDir() {
 			return nil
 		}
@@ -462,16 +456,19 @@ func (c *importCommand) importFromJekyll(args []string) error {
 
 	for jekyllPostDir, hasAnyPostInDir := range jekyllPostDirs {
 		if hasAnyPostInDir {
-			if err = helpers.SymbolicWalk(hugofs.Os, filepath.Join(jekyllRoot, jekyllPostDir), callback); err != nil {
+			if err = helpers.Walk(hugofs.Os, filepath.Join(jekyllRoot, jekyllPostDir), callback); err != nil {
 				return err
 			}
 		}
 	}
 
 	c.r.Println("Congratulations!", fileCount, "post(s) imported!")
-	c.r.Println("Now, start Hugo by yourself:\n" +
-		"$ git clone https://github.com/spf13/herring-cove.git " + args[1] + "/themes/herring-cove")
-	c.r.Println("$ cd " + args[1] + "\n$ hugo server --theme=herring-cove")
+	c.r.Println("Now, start Hugo by yourself:\n")
+	c.r.Println("cd " + args[1])
+	c.r.Println("git init")
+	c.r.Println("git submodule add https://github.com/theNewDynamic/gohugo-theme-ananke themes/ananke")
+	c.r.Println("echo \"theme = 'ananke'\" > hugo.toml")
+	c.r.Println("hugo server")
 
 	return nil
 }

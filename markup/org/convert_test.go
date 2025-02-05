@@ -1,4 +1,4 @@
-// Copyright 2023 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import (
 func TestConvert(t *testing.T) {
 	c := qt.New(t)
 	p, err := org.Provider.New(converter.ProviderConfig{
-		Logger: loggers.NewErrorLogger(),
+		Logger: loggers.NewDefault(),
 		Conf:   testconfig.GetTestConfig(afero.NewMemMapFs(), nil),
 	})
 	c.Assert(err, qt.IsNil)

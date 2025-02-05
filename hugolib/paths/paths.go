@@ -67,7 +67,7 @@ func New(fs *hugofs.Fs, cfg config.AllProvider) (*Paths, error) {
 	var multihostTargetBasePaths []string
 	if cfg.IsMultihost() && len(cfg.Languages()) > 1 {
 		for _, l := range cfg.Languages() {
-			multihostTargetBasePaths = append(multihostTargetBasePaths, l.Lang)
+			multihostTargetBasePaths = append(multihostTargetBasePaths, hpaths.ToSlashPreserveLeading(l.Lang))
 		}
 	}
 
@@ -83,16 +83,17 @@ func New(fs *hugofs.Fs, cfg config.AllProvider) (*Paths, error) {
 }
 
 func (p *Paths) AllModules() modules.Modules {
-	return p.Cfg.GetConfigSection("activeModules").(modules.Modules)
+	return p.Cfg.GetConfigSection("allModules").(modules.Modules)
 }
 
 // GetBasePath returns any path element in baseURL if needed.
+// The path returned will have a leading, but no trailing slash.
 func (p *Paths) GetBasePath(isRelativeURL bool) string {
 	if isRelativeURL && p.Cfg.CanonifyURLs() {
 		// The baseURL will be prepended later.
 		return ""
 	}
-	return p.Cfg.BaseURL().BasePath
+	return p.Cfg.BaseURL().BasePathNoTrailingSlash
 }
 
 func (p *Paths) Lang() string {
@@ -103,48 +104,15 @@ func (p *Paths) Lang() string {
 }
 
 func (p *Paths) GetTargetLanguageBasePath() string {
-	if len(p.Cfg.Languages()) > 1 {
+	if p.Cfg.IsMultihost() {
 		// In a multihost configuration all assets will be published below the language code.
 		return p.Lang()
 	}
 	return p.GetLanguagePrefix()
 }
 
-func (p *Paths) GetURLLanguageBasePath() string {
-	if len(p.Cfg.Languages()) > 1 {
-		return ""
-	}
-	return p.GetLanguagePrefix()
-}
-
 func (p *Paths) GetLanguagePrefix() string {
-	if len(p.Cfg.Languages()) < 2 {
-		return ""
-	}
-	defaultLang := p.Cfg.DefaultContentLanguage()
-	defaultInSubDir := p.Cfg.DefaultContentLanguageInSubdir()
-	currentLang := p.Cfg.Language().Lang
-	if currentLang == "" || (currentLang == defaultLang && !defaultInSubDir) {
-		return ""
-	}
-	return currentLang
-}
-
-// GetLangSubDir returns the given language's subdir if needed.
-func (p *Paths) GetLangSubDir(lang string) string {
-	if len(p.Cfg.Languages()) < 2 {
-		return ""
-	}
-
-	if p.Cfg.IsMultihost() {
-		return ""
-	}
-
-	if lang == "" || (lang == p.Cfg.DefaultContentLanguage() && !p.Cfg.DefaultContentLanguageInSubdir()) {
-		return ""
-	}
-
-	return lang
+	return p.Cfg.LanguagePrefix()
 }
 
 // AbsPathify creates an absolute path if given a relative path. If already

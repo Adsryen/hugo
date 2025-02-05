@@ -1,4 +1,4 @@
-// Copyright 2023 The Hugo Authors. All rights reserved.
+// Copyright 2024 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ func TestAsciidoctorDefaultArgs(t *testing.T) {
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -76,7 +76,7 @@ func TestAsciidoctorNonDefaultArgs(t *testing.T) {
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -106,7 +106,7 @@ func TestAsciidoctorDisallowedArgs(t *testing.T) {
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -130,7 +130,7 @@ func TestAsciidoctorArbitraryExtension(t *testing.T) {
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -164,7 +164,7 @@ func TestAsciidoctorDisallowedExtension(t *testing.T) {
 		p, err := asciidocext.Provider.New(
 			converter.ProviderConfig{
 				Conf:   conf,
-				Logger: loggers.NewErrorLogger(),
+				Logger: loggers.NewDefault(),
 			},
 		)
 		c.Assert(err, qt.IsNil)
@@ -195,7 +195,7 @@ trace = false
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -232,7 +232,7 @@ extensions = ["asciidoctor-html5s", "asciidoctor-diagram"]
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -266,13 +266,13 @@ func TestAsciidoctorAttributes(t *testing.T) {
 trace = false
 [markup.asciidocext.attributes]
 my-base-url = "https://gohugo.io/"
-my-attribute-name = "my value" 
+my-attribute-name = "my value"
 `)
 	conf := testconfig.GetTestConfig(nil, cfg)
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
 			Conf:   conf,
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -301,7 +301,7 @@ func getProvider(c *qt.C, mConfStr string) converter.Provider {
 	confStr := `
 [security]
 [security.exec]
-allow = ['asciidoctor']  
+allow = ['asciidoctor']
 `
 	confStr += mConfStr
 
@@ -311,9 +311,9 @@ allow = ['asciidoctor']
 
 	p, err := asciidocext.Provider.New(
 		converter.ProviderConfig{
-			Logger: loggers.NewErrorLogger(),
+			Logger: loggers.NewDefault(),
 			Conf:   conf,
-			Exec:   hexec.New(securityConfig),
+			Exec:   hexec.New(securityConfig, "", loggers.NewDefault()),
 		},
 	)
 	c.Assert(err, qt.IsNil)
@@ -368,6 +368,13 @@ testContent
 	c.Assert(ok, qt.Equals, true)
 
 	c.Assert(toc.TableOfContents().Identifiers, qt.DeepEquals, collections.SortedStringSlice{"_introduction", "_section_1", "_section_1_1", "_section_1_1_1", "_section_1_2", "_section_2"})
+	// Although "Introduction" has a level 3 markup heading, AsciiDoc treats the first heading as level 2.
+	c.Assert(toc.TableOfContents().HeadingsMap["_introduction"].Level, qt.Equals, 2)
+	c.Assert(toc.TableOfContents().HeadingsMap["_section_1"].Level, qt.Equals, 2)
+	c.Assert(toc.TableOfContents().HeadingsMap["_section_1_1"].Level, qt.Equals, 3)
+	c.Assert(toc.TableOfContents().HeadingsMap["_section_1_1_1"].Level, qt.Equals, 4)
+	c.Assert(toc.TableOfContents().HeadingsMap["_section_1_2"].Level, qt.Equals, 3)
+	c.Assert(toc.TableOfContents().HeadingsMap["_section_2"].Level, qt.Equals, 2)
 	c.Assert(string(r.Bytes()), qt.Not(qt.Contains), "<div id=\"toc\" class=\"toc\">")
 }
 

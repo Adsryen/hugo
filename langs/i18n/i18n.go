@@ -24,15 +24,12 @@ import (
 	"github.com/gohugoio/hugo/common/hreflect"
 	"github.com/gohugoio/hugo/common/loggers"
 	"github.com/gohugoio/hugo/config"
-	"github.com/gohugoio/hugo/helpers"
 	"github.com/gohugoio/hugo/resources/page"
 
 	"github.com/gohugoio/go-i18n/v2/i18n"
 )
 
 type translateFunc func(ctx context.Context, translationID string, templateData any) string
-
-var i18nWarningLogger = helpers.NewDistinctErrorLogger()
 
 // Translator handles i18n translations.
 type Translator struct {
@@ -90,7 +87,7 @@ func (t Translator) initFuncs(bndl *i18n.Bundle) {
 						// the context.Context.
 						// A common pattern is to pass Page to i18n, and use .ReadingTime etc.
 						// We need to improve this, but that requires some upstream changes.
-						// For now, just creata a wrepper.
+						// For now, just create a wrapper.
 						templateData = page.PageWithContext{Page: p, Ctx: ctx}
 					}
 				}
@@ -122,8 +119,8 @@ func (t Translator) initFuncs(bndl *i18n.Bundle) {
 				t.logger.Warnf("Failed to get translated string for language %q and ID %q: %s", currentLangStr, translationID, err)
 			}
 
-			if t.cfg.LogI18nWarnings() {
-				i18nWarningLogger.Printf("i18n|MISSING_TRANSLATION|%s|%s", currentLangStr, translationID)
+			if t.cfg.PrintI18nWarnings() {
+				t.logger.Warnf("i18n|MISSING_TRANSLATION|%s|%s", currentLangStr, translationID)
 			}
 
 			if enableMissingTranslationPlaceholders {

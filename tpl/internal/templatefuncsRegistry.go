@@ -23,7 +23,6 @@ import (
 	"go/doc"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -51,6 +50,9 @@ type TemplateFuncsNamespace struct {
 
 	// This is the method receiver.
 	Context func(ctx context.Context, v ...any) (any, error)
+
+	// OnCreated is called when all the namespaces are ready.
+	OnCreated func(namespaces map[string]any)
 
 	// Additional info, aliases and examples, per method name.
 	MethodMappings map[string]TemplateFuncMethodMapping
@@ -171,7 +173,7 @@ func (namespaces TemplateFuncsNamespaces) MarshalJSON() ([]byte, error) {
 
 	for i, ns := range namespaces {
 
-		b, err := ns.toJSON(context.TODO())
+		b, err := ns.toJSON(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +278,7 @@ func getGetTplPackagesGoDoc() map[string]map[string]methodGoDocInfo {
 			basePath = filepath.Join(pwd, "tpl")
 		}
 
-		files, err := ioutil.ReadDir(basePath)
+		files, err := os.ReadDir(basePath)
 		if err != nil {
 			log.Fatal(err)
 		}
